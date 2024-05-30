@@ -22,8 +22,8 @@ This Python script uses PySide6, OpenCV, and pyautogui to detect colors on the s
 
 1. Clone the repository:
     ```bash
-    git clone https://github.com/yourusername/yourrepository.git
-    cd yourrepository
+    git clone https://github.com/GrappePie/color-detection-rhythm-games.git
+    cd color-detection-rhythm-games
     ```
 
 2. Install the required packages:
@@ -35,7 +35,7 @@ This Python script uses PySide6, OpenCV, and pyautogui to detect colors on the s
 
 1. Run the script:
     ```bash
-    python script.py
+    python main.py
     ```
 
 2. A transparent window with draggable labels will appear. You can move the labels to the desired position on the screen.
