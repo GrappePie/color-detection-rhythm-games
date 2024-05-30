@@ -6,14 +6,59 @@ from PySide6.QtGui import QImage
 import pyautogui
 import keyboard
 
+class ReassignKeyWindow(QtWidgets.QWidget):
+    key_reassigned = QtCore.Signal(int, str)
+
+    def __init__(self, labels):
+        super().__init__()
+        self.labels = labels
+        self.current_label_index = None
+        self.initUI()
+
+    def initUI(self):
+        self.setWindowTitle("Reassign Keys")
+        self.setGeometry(300, 300, 400, 200)
+        self.layout = QtWidgets.QVBoxLayout()
+
+        self.buttons = []
+        for i, label in enumerate(self.labels):
+            h_layout = QtWidgets.QHBoxLayout()
+            region_label = QtWidgets.QLabel(f"Region {i + 1}: {label.command}")
+            reassign_button = QtWidgets.QPushButton("Reassign Key")
+            reassign_button.clicked.connect(lambda _, idx=i: self.prepare_reassign_key(idx))
+            h_layout.addWidget(region_label)
+            h_layout.addWidget(reassign_button)
+            self.layout.addLayout(h_layout)
+            self.buttons.append((region_label, reassign_button))
+
+        self.setLayout(self.layout)
+
+    def prepare_reassign_key(self, index):
+        self.current_label_index = index
+        self.buttons[index][1].setText("Press new key...")
+        self.grabKeyboard()
+
+    def keyPressEvent(self, event):
+        if self.current_label_index is not None:
+            key = event.key()
+            key_name = QtGui.QKeySequence(key).toString(QtGui.QKeySequence.NativeText)
+            if key_name:
+                self.key_reassigned.emit(self.current_label_index, key_name)
+                self.buttons[self.current_label_index][0].setText(f"Region {self.current_label_index + 1}: {key_name}")
+                self.buttons[self.current_label_index][1].setText("Reassign Key")
+                self.current_label_index = None
+                self.releaseKeyboard()
+
+    def update_ui(self):
+        for i, label in enumerate(self.labels):
+            self.buttons[i][0].setText(f"Region {i + 1}: {label.command}")
 
 class ColorDetectionThread(QtCore.QThread):
     color_detected = QtCore.Signal(bool, bool)
 
-    def __init__(self, label, command, parent=None):
+    def __init__(self, label, parent=None):
         super().__init__(parent)
         self.label = label
-        self.command = command
 
     def run(self):
         while True:
@@ -21,7 +66,7 @@ class ColorDetectionThread(QtCore.QThread):
                 self.color_detected.emit(False, self.label.active)
             elif self.detect_color():
                 self.color_detected.emit(True, self.label.active)
-                pyautogui.press(self.command)
+                pyautogui.press(self.label.command)
             else:
                 self.color_detected.emit(False, self.label.active)
             self.msleep(1)
@@ -48,13 +93,13 @@ class ColorDetectionThread(QtCore.QThread):
 
         return np.any(mask)
 
-
 class DraggableLabel(QtWidgets.QLabel):
-    def __init__(self, color_name, color_rgb, color_range, parent=None):
+    def __init__(self, color_name, color_rgb, color_range, command, parent=None):
         super().__init__(parent)
         self.color_name = color_name
         self.color_range = color_range
         self.original_color_rgb = color_rgb
+        self.command = command
         self.setStyleSheet(f"border: 5px solid {color_rgb};")
         self.setFixedSize(30, 60)
         self.active = True
@@ -76,7 +121,6 @@ class DraggableLabel(QtWidgets.QLabel):
 
     def move_to_position(self, pos):
         self.move(pos.x(), pos.y())
-
 
 class TransparentWindow(QtWidgets.QWidget):
     def __init__(self):
@@ -107,10 +151,10 @@ class TransparentWindow(QtWidgets.QWidget):
         self.labels = []
         self.threads = []
         for color_name, (color_rgb, color_range, command), pos in zip(color_infos.keys(), color_infos.values(), positions_left):
-            label = DraggableLabel(color_name, color_rgb, color_range, self)
+            label = DraggableLabel(color_name, color_rgb, color_range, command, self)
             label.move(*pos)
             self.labels.append(label)
-            thread = ColorDetectionThread(label, command)
+            thread = ColorDetectionThread(label)
             thread.color_detected.connect(lambda detected, active, l=label: l.setStyleSheet(
                 "border: 5px solid black;" if not active else (
                     "border: 5px solid white;" if detected else f"border: 5px solid {l.original_color_rgb};")))
@@ -121,12 +165,24 @@ class TransparentWindow(QtWidgets.QWidget):
         self.toggle_button.clicked.connect(self.toggle_activation)
         self.toggle_button.setGeometry(round(screen_resolution.width() / 2) - 70, 70, 150, 30)
 
-        keyboard.add_hotkey('1', lambda: self.update_color(0))
-        keyboard.add_hotkey('2', lambda: self.update_color(1))
-        keyboard.add_hotkey('3', lambda: self.update_color(2))
-        keyboard.add_hotkey('4', lambda: self.update_color(3))
+        self.reassign_button = QtWidgets.QPushButton("Reassign Keys", self)
+        self.reassign_button.clicked.connect(self.show_reassign_key_window)
+        self.reassign_button.setGeometry(round(screen_resolution.width() / 2) - 70, 120, 150, 30)
+
+        keyboard.add_hotkey('ctrl+1', lambda: self.update_color(0))
+        keyboard.add_hotkey('ctrl+2', lambda: self.update_color(1))
+        keyboard.add_hotkey('ctrl+3', lambda: self.update_color(2))
+        keyboard.add_hotkey('ctrl+4', lambda: self.update_color(3))
 
         self.show()
+
+    def show_reassign_key_window(self):
+        self.reassign_key_window = ReassignKeyWindow(self.labels)
+        self.reassign_key_window.key_reassigned.connect(self.reassign_key)
+        self.reassign_key_window.show()
+
+    def reassign_key(self, index, key):
+        self.labels[index].command = key
 
     def update_labels_position(self):
         if keyboard.is_pressed('shift+1'):
