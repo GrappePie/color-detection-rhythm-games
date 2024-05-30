@@ -1,7 +1,7 @@
 
-# Color Detection Script for Rhythm Games
+# Color Detection Script for Rhythm Games like FNF (Friday Night Funkin)
 
-This Python script uses PySide6, OpenCV, and pyautogui to detect colors on the screen and perform actions in rhythm games like FNF. The script creates a transparent window with draggable labels for each color to be detected. When the specified color is detected within the label's region, the script triggers a corresponding key press.
+This Python script uses PySide6, OpenCV, and pyautogui to detect colors on the screen and perform actions in rhythm games like FNF (Friday Night Funkin). The script creates a transparent window with draggable labels for each color to be detected. When the specified color is detected within the label's region, the script triggers a corresponding key press.
 
 ## Features
 
