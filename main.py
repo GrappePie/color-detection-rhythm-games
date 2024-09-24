@@ -5,6 +5,7 @@ from PySide6 import QtWidgets, QtGui, QtCore
 from PySide6.QtGui import QImage
 import pyautogui
 import keyboard
+from PySide6.QtCore import QMutex
 
 class ReassignKeyWindow(QtWidgets.QWidget):
     key_reassigned = QtCore.Signal(int, str)
@@ -56,19 +57,24 @@ class ReassignKeyWindow(QtWidgets.QWidget):
 class ColorDetectionThread(QtCore.QThread):
     color_detected = QtCore.Signal(bool, bool)
 
-    def __init__(self, label, parent=None):
+    def __init__(self, label, mutex, parent=None):
         super().__init__(parent)
         self.label = label
+        self.mutex = mutex
 
     def run(self):
         while True:
-            if not self.label.active:
-                self.color_detected.emit(False, self.label.active)
+            self.mutex.lock()
+            active = self.label.active
+            self.mutex.unlock()
+
+            if not active:
+                self.color_detected.emit(False, active)
             elif self.detect_color():
-                self.color_detected.emit(True, self.label.active)
+                self.color_detected.emit(True, active)
                 pyautogui.press(self.label.command)
             else:
-                self.color_detected.emit(False, self.label.active)
+                self.color_detected.emit(False, active)
             self.msleep(1)
 
     def detect_color(self):
@@ -125,11 +131,15 @@ class DraggableLabel(QtWidgets.QLabel):
 class TransparentWindow(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
+        self.mutex = QMutex()
         self.region_height = 200
         self.initUI()
         self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self.update_labels_position)
         self.timer.start(10)  # Update every 10 ms
+
+        # Setup global listener for Ctrl key
+        keyboard.on_press_key('ctrl', lambda _: self.toggle_activation())
 
     def initUI(self):
         self.setWindowFlags(QtCore.Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint)
@@ -154,16 +164,12 @@ class TransparentWindow(QtWidgets.QWidget):
             label = DraggableLabel(color_name, color_rgb, color_range, command, self)
             label.move(*pos)
             self.labels.append(label)
-            thread = ColorDetectionThread(label)
+            thread = ColorDetectionThread(label, self.mutex, parent=self)
             thread.color_detected.connect(lambda detected, active, l=label: l.setStyleSheet(
                 "border: 5px solid black;" if not active else (
                     "border: 5px solid white;" if detected else f"border: 5px solid {l.original_color_rgb};")))
             thread.start()
             self.threads.append(thread)
-
-        self.toggle_button = QtWidgets.QPushButton("Toggle Activación", self)
-        self.toggle_button.clicked.connect(self.toggle_activation)
-        self.toggle_button.setGeometry(round(screen_resolution.width() / 2) - 70, 70, 150, 30)
 
         self.reassign_button = QtWidgets.QPushButton("Reassign Keys", self)
         self.reassign_button.clicked.connect(self.show_reassign_key_window)
@@ -220,8 +226,12 @@ class TransparentWindow(QtWidgets.QWidget):
         return (b, g, r)
 
     def toggle_activation(self):
-        for label in self.labels:
-            label.active = not label.active
+        self.mutex.lock()
+        try:
+            for label in self.labels:
+                label.active = not label.active
+        finally:
+            self.mutex.unlock()
 
     def keyPressEvent(self, event):
         if event.key() == QtCore.Qt.Key_Escape:
@@ -231,7 +241,6 @@ class TransparentWindow(QtWidgets.QWidget):
         for thread in self.threads:
             thread.terminate()
         super().closeEvent(event)
-
 
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
